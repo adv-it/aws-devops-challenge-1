@@ -1,0 +1,7 @@
+Урбанович Сергей <urb.s@tut.by> via yandex.ru 
+
+Лишние права   "ec2:DisassociateAddress"
+
+Использование Module на каждый ресурс это overengineering.
+
+Но сделано Профессионально!

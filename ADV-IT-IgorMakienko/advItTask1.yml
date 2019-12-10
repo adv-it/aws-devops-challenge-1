@@ -1,0 +1,154 @@
+# Maintainer: Igor Makienkio
+# E-mail: makienko.ig@gmail.com
+#
+# To Create/Update Stack:
+# aws cloudformation deploy --stack-name bastion --template-file advItTask1.yml
+#                           --parameter-overrides KeyName=<yourKeyName>
+#                             InstanceType=<preferredInstanceType>
+#                             VpcID=<preferredVPC>
+#                             SubnetIds=<subnet-1,subnet-2,subnet-n>
+#                           --capabilities CAPABILITY_NAMED_IAM
+
+---
+  AWSTemplateFormatVersion: '2010-09-09'
+
+  Description: 'Creates AutoScalingGroup with only one Bastion-host.
+                Attaches EIP to the Bastion-host.'
+
+  Parameters:
+    KeyName:
+      Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+      Type: 'AWS::EC2::KeyPair::KeyName'
+      ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    InstanceType:
+      Type: String
+      Description: Type of EC2 instance.
+      Default: t2.micro
+      AllowedValues: [ t2.micro, t2.small, t2.medium, t3.micro, t3.small, t3.medium ]
+      ConstraintDescription: Must be a valid EC2 instance type.
+    VpcId:
+      Description: VpcId of your existing Virtual Private Cloud (VPC)
+      Type: 'AWS::EC2::VPC::Id'
+      ConstraintDescription: must be the VPC Id of an existing VPC.
+    SubnetIds:
+      Type: 'List<AWS::EC2::Subnet::Id>'
+      Description: The list of SubnetIds in your Virtual Private Cloud (VPC)
+      ConstraintDescription: >-
+        must be a list of at least two existing subnets associated with at least
+        two different availability zones. They should be residing in the selected
+        Virtual Private Cloud.
+
+  Mappings:
+    RegionMap:
+      us-east-1:
+        AMI: ami-00068cd7555f543d5 # Amazon Linux 2
+      us-east-2:
+        AMI: ami-0dacb0c129b49f529 # Amazon Linux 2
+      us-west-1:
+        AMI: ami-0b2d8d1abb76a53d8 # Amazon Linux 2
+      us-west-2:
+        AMI: ami-0c5204531f799e0c6 # Amazon Linux 2
+
+  Resources:
+    BastionSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Enable SSH access via port 22
+        VpcId: !Ref VpcId
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 22
+            ToPort: 22
+            CidrIp: 0.0.0.0/0
+        Tags:
+          - Key: 'Name'
+            Value: 'bastionSG'
+
+    BastionRole:
+      Type: AWS::IAM::Role
+      Properties:
+        Description: 'Role for Bastion-host. Needs to associate EIP.'
+        RoleName: 'BastionRole'
+        Path: '/'
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - ec2.amazonaws.com
+              Action:
+                - sts:AssumeRole
+        Policies:
+          - PolicyName: 'EIPtoBastion'
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Resource: '*'
+                  Action:
+                    - ec2:AssociateAddress
+        Tags:
+          - Key: 'Name'
+            Value: 'bastionRole'
+
+    BastionInstanceProfile:
+      Type: AWS::IAM::InstanceProfile
+      Properties:
+        Path: '/'
+        Roles:
+          - Ref: BastionRole
+
+    BastionEIP:
+      Type: AWS::EC2::EIP
+      Properties:
+        Tags:
+          - Key: 'Name'
+            Value: 'bastionEIP'
+
+    BastionLaunchConfig:
+      Type: AWS::AutoScaling::LaunchConfiguration
+      Properties:
+        UserData:
+          Fn::Base64: !Sub
+            - |
+              #!/bin/bash -x
+              echo -------------------------START-----------------------------
+              instanceID=$(curl -s \
+              http://169.254.169.254/latest/meta-data/instance-id)
+              allocationID=${AllocationId}
+              region=${Region}
+              function retryCommand() {
+                  local ATTEMPTS="$1"
+                  local SLEEP="$2"
+                  local FUNCTION="$3"
+                  for i in $(seq 1 $ATTEMPTS); do
+                      [ $i == 1 ] || sleep $SLEEP
+                      eval $FUNCTION && break
+                  done
+              }
+              echo ---------------------ASSOCIATING EIP-----------------------
+              retryCommand 5 10 "aws ec2 associate-address --instance-id \
+              $instanceID --allocation-id $allocationID --region $region"
+            - AllocationId: !GetAtt BastionEIP.AllocationId
+              Region: !Ref 'AWS::Region'
+        AssociatePublicIpAddress: true
+        ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyName
+        IamInstanceProfile: !Ref BastionInstanceProfile
+        SecurityGroups:
+          - !Ref BastionSecurityGroup
+
+    BastionAutoScalingGroup:
+      Type: AWS::AutoScaling::AutoScalingGroup
+      Properties:
+        VPCZoneIdentifier: !Ref SubnetIds
+        LaunchConfigurationName: !Ref BastionLaunchConfig
+        MinSize: '1'
+        MaxSize: '1'
+        DesiredCapacity: '1'
+        Tags:
+          - Key: 'Name'
+            Value: 'bastionASG'
+            PropagateAtLaunch: true

@@ -1,0 +1,8 @@
+Oleg Buevich <obuevich@protonmail.com> 
+
+Я Давно не занимался CloudFormation Вот это круто:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+
+Очень Хорошая работа!

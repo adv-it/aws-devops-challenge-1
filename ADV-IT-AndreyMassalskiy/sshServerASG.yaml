@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AutoScaling for 1 EC2 instance with SSH access enabled and EIP attached. Made by Andrey Massalskiy (60641k)
+
+Parameters:
+
+  InstanceType:
+    Description: The instance type to use for the EC2 instance. t2 and t3 available in different sizes. Default is t2.micro.
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of the SSH key pair
+
+  VPCID:
+    Description: ID of the VPC.
+    Type: AWS::EC2::VPC::Id
+
+  SubnetID:
+    Description: ID of the subnets.
+    Type: List<AWS::EC2::Subnet::Id>
+
+Mappings: 
+    RegionMap: 
+      us-east-1: 
+        AMZNlinux: ami-00eb20669e0990cb4
+      us-east-2: 
+        AMZNlinux: ami-0c64dd618a49aeee8
+      us-west-1: 
+        AMZNlinux: ami-0bce08e823ed38bdd
+      us-west-2: 
+        AMZNlinux: ami-08d489468314a58df
+      ap-east-1: 
+        AMZNlinux: ami-f8ee9589
+      ap-south-1: 
+        AMZNlinux: ami-02913db388613c3e1
+      ap-northeast-2: 
+        AMZNlinux: ami-0e1e385b0a934254a
+      ap-southeast-1: 
+        AMZNlinux: ami-05c859630889c79c8
+      ap-southeast-2: 
+        AMZNlinux: ami-07cc15c3ba6f8e287
+      ap-northeast-1: 
+        AMZNlinux: ami-0ab3e16f9c414dee7
+      ca-central-1: 
+        AMZNlinux: ami-04070f04f450607dc                  
+      eu-central-1: 
+        AMZNlinux: ami-010fae13a16763bb4 
+      eu-west-1: 
+        AMZNlinux: ami-028188d9b49b32a80 
+      eu-west-2: 
+        AMZNlinux: ami-04de2b60dd25fbb2e 
+      eu-west-3: 
+        AMZNlinux: ami-0652eb0db9b20aeaf 
+      eu-north-1: 
+        AMZNlinux: ami-6a1f9414 
+      me-south-1: 
+        AMZNlinux: ami-07a246cb94128dd8f 
+      sa-east-1: 
+        AMZNlinux: ami-0e2c2c29d8017dd99
+
+Resources:
+
+  EIP:
+    Type: AWS::EC2::EIP
+    Properties: 
+      Domain: 
+        Ref: VPCID
+      Tags: 
+        - Key: Name
+          Value: SshServer
+
+  IamRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement:  
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: EIPassociate
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - ec2:DescribeInstances
+                  - ec2:AssociateAddress
+                Resource: '*'
+      Description: EIP associate role for Ec2Instance
+      RoleName: SshServerRole
+      Tags: 
+        - Key: Name
+          Value: SshServer
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      InstanceProfileName: ssh-server-instance-profile
+      Roles: 
+        - Ref: IamRole
+
+  sshSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH connections
+      SecurityGroupIngress:
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      VpcId:
+        Ref: VPCID
+      Tags:
+        - Key: Name
+          Value: SshServer
+
+  AutoScalingGroup:
+      Type: AWS::AutoScaling::AutoScalingGroup
+      Properties:
+        AutoScalingGroupName: SSH Server Autoscaling Group
+        Cooldown: 120
+        DesiredCapacity: 1
+        LaunchConfigurationName: 
+          Ref: LaunchConfiguration 
+        MaxSize: 1
+        MinSize: 1
+        Tags:
+          - Key: Name
+            Value: SshServer
+            PropagateAtLaunch: 'true'
+        VPCZoneIdentifier:
+          Ref: SubnetID
+
+  LaunchConfiguration: 
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties: 
+      KeyName: 
+        Ref: KeyName
+      ImageId: !FindInMap [ RegionMap, !Ref 'AWS::Region', AMZNlinux ]
+      SecurityGroups: 
+        - Ref: sshSG
+      InstanceType: 
+        Ref: InstanceType
+      IamInstanceProfile: 
+        Ref: InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash 
+          INSTANCE_ID=`/usr/bin/curl -s http://169.254.169.254/latest/meta-data/instance-id`
+          aws ec2 associate-address --region ${AWS::Region} --instance-id $INSTANCE_ID --allocation-id ${EIP.AllocationId} --allow-reassociation
+
+Outputs: 
+    AutoscalingGroup: 
+      Description: The newly created Autoscaling Group
+      Value: 
+        Ref: AutoScalingGroup
+    LaunchConfiguration:
+      Description: The newly created Launch Configuration
+      Value:
+        Ref: LaunchConfiguration
+    SecurityGroup:
+      Description: The newly created Security Group with SSH enabled
+      Value:
+        Ref: sshSG
+    EIP: 
+      Description: The newly created ElasticIP
+      Value: 
+        Ref: EIP
+    IamRole: 
+      Description: The newly created IAM Role with Allow EIPassociate policy
+      Value: 
+        Ref: IamRole
+
+

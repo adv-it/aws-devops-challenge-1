@@ -1,0 +1,186 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  Stack for ADV-IT AWS DevOps Challenge-1.
+  Author: Oleg Buevich https://github.com/olegbuevich
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network
+        Parameters:
+          - BastionHostVpcId
+          - BastionHostSubnets
+      - Label:
+          default: Instances
+        Parameters:
+          - BastionHostAmiId
+          - BastionHostSshKey
+          - BastionHostInstanceType
+
+Parameters:
+  BastionHostVpcId:
+    Type: AWS::EC2::VPC::Id
+
+  BastionHostSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnets for bastion host
+
+  BastionHostSshKey:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+
+  BastionHostAmiId:
+    Description: |
+      SSM Public Parameter (https://docs.aws.amazon.com/systems-manager/latest/userguide/parameter-store-public-parameters.html)
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+  BastionHostInstanceType:
+    Type: String
+    Description: EC2 instance type for bastion host
+    Default: t3a.nano
+    AllowedValues:
+      - t3.large
+      - t3.medium
+      - t3.micro
+      - t3.nano
+      - t3.small
+      - t3a.large
+      - t3a.medium
+      - t3a.micro
+      - t3a.nano
+      - t3a.small
+
+  Project:
+    Description: Project name
+    Type: String
+    Default: ADV-IT_challenge_1
+    AllowedValues:
+      - ADV-IT_challenge_1
+
+Resources:
+  BastionHostIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: BastionHostIP
+        - Key: project
+          Value: !Ref Project
+
+  BastionHostSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: BastionHostSecurityGroup
+      GroupDescription: Allow ssh access to bastion host from worldwide
+      SecurityGroupIngress:
+        - FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: BastionHostSecurityGroup
+        - Key: project
+          Value: !Ref Project
+
+  BastionHostIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /service/bastion/
+      RoleName:
+        Fn::Join:
+          - '-'
+          - - "BastionHost"
+            - !Ref AWS::Region
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName:
+            Fn::Join:
+              - '-'
+              - - "BastionHost"
+                - !Ref AWS::Region
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ec2:AssociateAddress"
+                Resource:
+                  - "*"
+      Tags:
+        - Key: project
+          Value: !Ref Project
+
+  BastionHostInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName:
+        Fn::Join:
+          - "-"
+          - - BastionHost
+            - !Ref AWS::Region
+      Path: /service/bastion/
+      Roles:
+        - !Ref BastionHostIamRole
+
+  BastionHostLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      LaunchConfigurationName:
+        Fn::Join:
+          - "-"
+          - - BastionHost
+            - !Ref AWS::Region
+      AssociatePublicIpAddress: true
+      IamInstanceProfile: !Ref BastionHostInstanceProfile
+      ImageId: !Ref BastionHostAmiId
+      InstanceType: !Ref BastionHostInstanceType
+      KeyName: !Ref BastionHostSshKey
+      SecurityGroups:
+        - Fn::GetAtt: BastionHostSecurityGroup.GroupId
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -eu
+          INSTANCE_ID=$(curl --silent http://169.254.169.254/latest/meta-data/instance-id)
+          aws ec2 associate-address \
+            --allocation-id ${BastionHostIP.AllocationId} \
+            --instance-id ${!INSTANCE_ID} \
+            --region ${AWS::Region}
+
+  BastionHostAutoscalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName:
+        Fn::Join:
+          - "-"
+          - - BastionHost
+            - !Ref AWS::Region
+      MinSize: "1"
+      MaxSize: "1"
+      DesiredCapacity: "1"
+      LaunchConfigurationName: !Ref BastionHostLaunchConfiguration
+      VPCZoneIdentifier: !Ref BastionHostSubnets
+      Tags:
+        - Key: Name
+          Value: Bastion Host
+          PropagateAtLaunch: true
+        - Key: project
+          Value: !Ref Project
+          PropagateAtLaunch: true
+
+Outputs:
+  BastionHostIP:
+    Description: Bastion Host Public IP Address
+    Value: !Ref BastionHostIP

@@ -1,0 +1,6 @@
+Andrey Massalskiy <60641k@gmail.com> 
+
+Лишние Permission
+ ec2:DescribeInstances
+
+В Целом работа Супер!

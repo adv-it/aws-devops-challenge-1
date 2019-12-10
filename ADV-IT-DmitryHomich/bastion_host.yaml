@@ -1,0 +1,170 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'Bastion Host in AutoSG with two subnet'
+#-------------------------------Parameters----------------------------------
+Parameters:
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+
+          #--------  For VPC -------------
+
+  VPC:
+   Description:  VPC list for the Region
+   Type: 'AWS::EC2::VPC::Id'
+   ConstraintDescription: must be the name of an existing VPC.
+
+  Subnets:
+   Description:  Subnet list for the VPC
+   Type: 'List<AWS::EC2::Subnet::Id>'
+   ConstraintDescription: must be the name of an existing Subnet.
+
+        #--------  For AutoSG -------------
+
+  LatestAMIid:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+    Description: The latest ImageID alias
+
+  KeyName:
+   Type: 'AWS::EC2::KeyPair::KeyName'
+   ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    AllowedValues:
+      - t2.micro
+      - m1.small
+      - m1.large
+    Description: Enter t2.micro, m1.small, or m1.large. Default is t2.micro.
+
+#-------------------------------Metadata----------------------------------
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: "Environment"
+      Parameters:
+      - EnvironmentName
+    - Label:
+        default: "Network Configuration"
+      Parameters:
+      - VPC
+      - Subnets
+    - Label:
+        default: "BastionHost Configuration"
+      Parameters:
+      - InstanceType
+      - KeyName
+      - LatestAMIid
+
+#-------------------------------Resources----------------------------------
+
+Resources:
+
+  BHSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+     VpcId: !Ref VPC
+     GroupName : BHSecurityGroup
+     GroupDescription: Enable SSH access via port 22
+     SecurityGroupIngress:
+       - IpProtocol: tcp
+         FromPort: '22'
+         ToPort: '22'
+         CidrIp: 0.0.0.0/0
+     Tags:
+       - Key: Name
+         Value: !Sub ${EnvironmentName}-BHSecurityGroup
+
+   #------------------IAM ROLE-------------------------------
+  EC2Role:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      RoleName: BH-EC2Role
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-BH-Role
+  Ec2Policy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: "EC2Policy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Action:
+              - "ec2:AssociateAddress"
+              - "ec2:DisassociateAddress"
+            Resource: "*"
+      Roles:
+        - !Ref EC2Role
+  EC2Profile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref EC2Role
+  #------------------AutoScaling-------------------------------
+  EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-BH-EIP
+
+  AutoSGLaunchCF:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      LaunchConfigurationName: !Sub ${EnvironmentName}-BH-LaunchCF
+      KeyName: !Ref KeyName
+      ImageId: !Ref LatestAMIid
+      UserData:
+        Fn::Base64:                                # YAML makes userdata much cleaner
+          !Sub |
+              #!/bin/bash
+              INSTANCE_ID=`/usr/bin/curl -s http://169.254.169.254/latest/meta-data/instance-id`
+              aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id ${EIP.AllocationId} --region ${AWS::Region}
+      SecurityGroups:
+        - !Ref BHSecurityGroup
+      IamInstanceProfile: !Ref EC2Profile
+      InstanceType: !Ref InstanceType
+
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${EnvironmentName}-BH-ASG
+      Cooldown: 60
+      DesiredCapacity: 1
+      LaunchConfigurationName: !Ref AutoSGLaunchCF
+      MaxSize: 1
+      MinSize: 1
+      Tags:
+        -
+          Key: Name
+          Value: !Sub ${EnvironmentName}-BastionHost
+          PropagateAtLaunch: 'true'
+      VPCZoneIdentifier:
+        Ref: Subnets
+
+#-------------------------------Outputs----------------------------------
+Outputs:
+  Region:
+    Description: "Current Region"
+    Value: !Ref "AWS::Region"
+
+# © 2019, Khomich Dmitry

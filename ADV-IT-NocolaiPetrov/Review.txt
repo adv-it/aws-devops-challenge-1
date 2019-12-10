@@ -1,0 +1,9 @@
+Nicolai Petrov <petrov.nicolai@gmail.com> 
+
+У нас нету ELB, надо было EC2
+
+  health_check_type    = "ELB"
+
+
+
+Очень Хорошая работа!

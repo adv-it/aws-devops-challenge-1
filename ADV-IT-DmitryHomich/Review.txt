@@ -1,0 +1,5 @@
+<hodv@tut.by>
+
+Лишнее             - "ec2:DisassociateAddress"
+
+Очень Хорошая работа!

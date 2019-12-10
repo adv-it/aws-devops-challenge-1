@@ -1,0 +1,8 @@
+kmaksfx@gmail.com
+
+Allocation_id ожно было передать из Terarform тогда это бы не понадобилось в policy
+        "ec2:DescribeAddresses"
+
+Нету Tags у IAM Role
+
+Очень Хорошая работа!

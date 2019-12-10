@@ -1,0 +1,7 @@
+Vlad Samchuk <vsamchuk1@gmail.com> 
+
+Записан image_id определённый, код не будет работать в другом регионе
+
+  image_id                    = "ami-00068cd7555f543d5" 
+
+А так всё отлино!
