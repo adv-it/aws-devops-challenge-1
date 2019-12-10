@@ -1,6 +1,10 @@
 # AWS DevOps Challenge - 1
 
-## Список победителей
+Задание: `https://www.youtube.com/watch?v=E76YJIvq0Zo`
+
+<img src="adv-it.png"><br>
+
+## Список победителей Конкурса
 
 | Name                   | Использовал    | 
 |------------------------|----------------|
