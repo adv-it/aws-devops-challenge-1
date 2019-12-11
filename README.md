@@ -1,6 +1,6 @@
 # AWS DevOps Challenge - 1
 
-Видео Задания: `https://youtu.be/E76YJIvq0Zo`
+Видео Задания: https://youtu.be/E76YJIvq0Zo
 
 <img src="adv-it.png"><br>
 
@@ -19,4 +19,4 @@
 | 9. SergeyUrbanovich    | Terraform      |
 | 10.Vlad Samchuk        | Terraform      |
 
-Видео Результатов: `https://youtu.be/p0Fv1X1kZ94`
+Видео Результатов: https://youtu.be/p0Fv1X1kZ94
