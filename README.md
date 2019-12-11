@@ -1,6 +1,6 @@
 # AWS DevOps Challenge - 1
 
-Задание: `https://www.youtube.com/watch?v=E76YJIvq0Zo`
+Видео Задания: `https://youtu.be/E76YJIvq0Zo`
 
 <img src="adv-it.png"><br>
 
@@ -18,3 +18,5 @@
 | 8. Oleg Buevich        | CloudFormation |
 | 9. SergeyUrbanovich    | Terraform      |
 | 10.Vlad Samchuk        | Terraform      |
+
+Видео Результатов: `https://youtu.be/p0Fv1X1kZ94`
